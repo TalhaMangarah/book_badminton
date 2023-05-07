@@ -12,7 +12,7 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.options import Options
-from logging.handlers import TimedRotatingFileHandler
+# from logging.handlers import TimedRotatingFileHandler
 # import undetected_chromedriver as uc
 from typing import Tuple
 from time import sleep
@@ -43,10 +43,36 @@ user_password = os.getenv("USER_PASSWORD")
 # logging.debug('User email set to: '+user_email)
 # logging.debug('User password set')
 
-# begin at 12:00AM and end at 12:05AM
+# begin at 12:00AM and end at 12:10AM
 begin_time = datetime.time(12, 00)
 end_time = datetime.time(12, 10)
 max_try = 10
+# booking_attempt = 0
+bookings_that_can_be_made_per_day = 2
+booked_sectors = []
+booked_courts = []
+# Sector Priority List: 4, 1, 2, 5, 8, 6, 3 & 7.
+sector_priority_order = [4, 1, 2, 5, 8, 6, 3, 7]
+# Court Priority List = last priority, any court number (courts go from 1 to 4)
+num_of_days_to_look_ahead = 6
+num_days_in_week = 7
+
+weekday_session_start_time = "18:00"
+weekend_session_start_time = "12:00"
+
+# booking_times_buttons = {
+# '12:00':'/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[14]/td[8]',
+# '13:00':'/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[15]/td[8]',
+# '18:00':'/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[20]/td[8]',
+# '19:00':'/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[21]/td[8]'
+# }
+
+booking_times_buttons = {
+    '12:00': '//*[@id="ctl00_MainContent_cal_calbtn90"]',
+    '13:00': '//*[@id="ctl00_MainContent_cal_calbtn97"]',
+    '18:00': '/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[20]/td[8]',
+    '19:00': '/html/body/form/div[3]/div/div/div/section/div/div/div[1]/div[2]/div[1]/table/tbody/tr[21]/td[8]'
+}
 # logging.info('Begin and end times set')
 # logging.debug(f'Begin time is {begin_time} and end time is {end_time}')
 
@@ -100,11 +126,35 @@ def check_current_time(begin_time: datetime.time, end_time: datetime.time) -> Tu
     # return current_time, (begin_time <= current_time) and (current_time < end_time)
     return current_time, is_between
 
+def get_day_of_week_x_days_ahead() -> int:
+    '''
+    Gets the current day of week via datetime - values are 0 to 6 with Monday being 0 and 6 being Sunday.
+    The booking site shows 6 days ahead on the main booking page therefore we need the day 6 days ahead.
+    '''
+    current_day_of_week = datetime.datetime.now().weekday()
+    dow_x_days_ahead = (current_day_of_week + num_of_days_to_look_ahead) % num_days_in_week
+    return dow_x_days_ahead
+
+def check_if_weekday(dow: int) -> bool:
+    if dow >= 5:
+        return False
+    else: 
+        return True
+
+def does_booking_button_contain_available(booking_button_text: str) -> bool:
+    if booking_button_text == 'Available':
+        return True
+    elif booking_button_text == 'Not Available':
+        return False
+    else:
+        return Exception("Booking button text is not 'Available' or 'Not Available'")
+
 #TODO: check if logged on to website before 12AM so we can be ready
 def check_login():
-        print('check login > getting booking site')
+        # is the get page again needed?
+        # print('check login > getting booking site')
         # logging.info('Check login > getting booking site')
-        driver.get(booking_site_url)
+        # driver.get(booking_site_url)
         # logging.info('Check login > got booking site')
         logged_on = False
 
@@ -113,47 +163,126 @@ def check_login():
             # check if the user is not logged in
             if not is_during_running_time[1]:
                 if "MRMLogin" in driver.current_url:
-                    print("check login > User is not logged in.")
+                    print("check_login: User is not logged in.")
                     email_field = driver.find_element(By.XPATH,'//*[@id="ctl00_MainContent_InputLogin"]')
-                    print('check login > Inputting username: '+user_email)
+                    print('check_login: Inputting username: '+user_email)
                     email_field.send_keys(user_email)
-                    print('check login > Inputting password')
+                    print('check_login: Inputting password')
                     password_field = driver.find_element(By.XPATH,'//*[@id="ctl00_MainContent_InputPassword"]')
                     password_field.send_keys(user_password)
-                    print('check login > clicking on login button')
-                    sleep(2)
-                    driver.find_element(By.XPATH, '//*[@id="ctl00_MainContent_btnLogin"]').click()
-                    sleep(3)
+                    print('check_login: clicking on login button')
+                    # sleep(2)
+                    login_button = driver.find_element(By.XPATH, '//*[@id="ctl00_MainContent_btnLogin"]')
+                    login_button.click()
+                    # sleep(3)
+                    # print('check login > clicking on top Badminton 40 mins')
+                    # driver.find_element(By.XPATH, '/html/body/form/div[3]/div/div/div/section/div[1]/div/div/div/div[2]/div[2]/div/div/ul/li[2]').click()
+                    # sleep(3)
                     # logged_on = True
                     # print("check login > User is now logged in.")
                     # return(logged_on)
                 else:
                     logged_on = True
-                    print("check login > User is now logged in.")
+                    print("check_login: User is now logged in.")
                     # return(logged_on)
             else:
-                print('check login > running during booking time therefore returned')
+                print('check_login: running during booking time therefore returned')
                 return
 
-# def book_sectors():
+def check_day_booking_available(is_weekday: bool, booking_attempt_num: int) -> bool:
+    times = ['18:00', '19:00'] if is_weekday else ['12:00', '13:00']
+    print(f'time to check is {times[booking_attempt_num]}')
+    print(
+        f'booking_times_buttons val is: {booking_times_buttons[times[booking_attempt_num]]}')
+    booking_button_text = driver.find_element(
+        By.XPATH, booking_times_buttons[times[booking_attempt_num]]).get_attribute("value")
+    print(f'text in button is: {booking_button_text}')
+    # return all([does_booking_button_contain_available(text) for text in booking_button_texts[:booking_attempt_num]])
+    return does_booking_button_contain_available(booking_button_text)
+    # booking_button_text = ''
+    # booking_times = {
+    #     1: booking
+    # }
+    # if is_weekday:
+    #     if booking_attempt_num == 1:
+    #         booking_button_text = driver.find_element(by.XPATH, booking_times_buttons['18:00']).text
+    #         return does_booking_button_contain_available(booking_button_text)
+    #     elif booking_attempt_num == 2:
+    #         booking_button_text = driver.find_element(by.XPATH, booking_times_buttons['19:00']).text
+    #         return does_booking_button_contain_available(booking_button_text)
+    # else:
+    #     if booking_attempt_num == 1:
+    #         booking_button_text = driver.find_element(by.XPATH, booking_times_buttons['12:00']).text
+    #         return does_booking_button_contain_available(booking_button_text)
+    #     elif booking_attempt_num == 2:
+    #         booking_button_text = driver.find_element(by.XPATH, booking_times_buttons['13:00']).text
+    #         return does_booking_button_contain_available(booking_button_text)
 
-#     return
+def carry_out_booking():
 
-# print(check_current_time(begin_time, end_time))
+    return
+
+
+# TODO: check sectors availability with the priority, then click on it in book_sector_or_court function
+def check_sectors_available():
+    match sector:
+        case 'sector4':
+
+            return
+        case _:
+            return
+    return
+
+def check_courts_available():
+    return
+
+
+def book_sectors_or_court():
+    print('book_sectors_or_court: clicking on top Badminton 40 mins')
+    book_badminton_button = driver.find_element(
+        By.XPATH, '//*[@id="ctl00_MainContent_MostRecentBookings1_Bookings_ctl01_bookingLink"]')
+    book_badminton_button.click()
+    # sleep(2)
+    # booking_button_text1 = driver.find_element(
+    #     By.XPATH, '// *[@id="ctl00_MainContent_cal_calbtn90"]')
+    # print(booking_button_text1.get_attribute('value'))
+    # print(f'text in button is: {booking_button_text1}')
+    is_booking_day_weekday = check_if_weekday(get_day_of_week_x_days_ahead())
+    print(f'is booking day a weekday? {is_booking_day_weekday}')
+    booking_attempt = 0
+    while booking_attempt < bookings_that_can_be_made_per_day:
+        is_day_avail = check_day_booking_available(is_booking_day_weekday, booking_attempt)
+        print(f'booking attempt is {booking_attempt+1}, bookling time is avail?: {is_day_avail}')
+        if is_day_avail:
+            return
+        else:
+            return 
+        booking_attempt += 1
+        # return
+
 def make_booking():
     try:
-        print('getting booking site')
+        print('make_booking: Starting booking flow')
+        print('make_booking: Getting booking site')
         driver.get(booking_site_url)
-        sleep(1)
-        print('checking logged in')
+        # sleep(1)
+        print('make_booking: Checking logged in')
         check_login()
-        # print('booking sector')
+        # while True:
+        #     if not is_during_running_time:
+        #         print(
+        #             f'make_booking: Not Running the program. It is {current_time} and not between {begin_time} and {end_time}')
+
+
+
+        print('booking sector')
+        book_sectors_or_court()
         # book_sectors()
     except Exception as e:
         print(e)
         return False
     finally:
-        print('quitting driver/browser')
+        print('make_booking: Quitting driver/browser')
         driver.quit()
 
 # def try_booking():

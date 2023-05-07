@@ -1,2 +1,5 @@
+.venv
+.devvenv
 .env
 ryujimorita.1009.py
+test.py
